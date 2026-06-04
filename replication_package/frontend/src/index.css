@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* ── Ambient background orbs ── */
+@keyframes orb-drift-1 {
+  0%   { transform: translate(0px,  0px)  scale(1);    }
+  50%  { transform: translate(40px, 60px) scale(1.08); }
+  100% { transform: translate(0px,  0px)  scale(1);    }
+}
+
+@keyframes orb-drift-2 {
+  0%   { transform: translate(0px,   0px)  scale(1);    }
+  50%  { transform: translate(-50px, -40px) scale(1.06); }
+  100% { transform: translate(0px,   0px)  scale(1);    }
+}
+
+@keyframes orb-drift-3 {
+  0%   { transform: translate(0px,  0px)  scale(1);    }
+  50%  { transform: translate(30px,-50px) scale(1.05); }
+  100% { transform: translate(0px,  0px)  scale(1);    }
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.orb-1 {
+  width: 55vw;
+  height: 55vw;
+  top: -15%;
+  left: -10%;
+  background: radial-gradient(circle at center, rgba(99,102,241,0.18) 0%, transparent 65%);
+  filter: blur(80px);
+  animation: orb-drift-1 20s ease-in-out infinite alternate;
+}
+
+.orb-2 {
+  width: 45vw;
+  height: 45vw;
+  bottom: -15%;
+  right: -10%;
+  background: radial-gradient(circle at center, rgba(16,185,129,0.14) 0%, transparent 65%);
+  filter: blur(80px);
+  animation: orb-drift-2 24s ease-in-out infinite alternate;
+  animation-delay: -8s;
+}
+
+.orb-3 {
+  width: 35vw;
+  height: 35vw;
+  top: 40%;
+  left: 35%;
+  background: radial-gradient(circle at center, rgba(139,92,246,0.10) 0%, transparent 65%);
+  filter: blur(90px);
+  animation: orb-drift-3 28s ease-in-out infinite alternate;
+  animation-delay: -14s;
+}
