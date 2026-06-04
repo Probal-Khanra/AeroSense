@@ -68,6 +68,8 @@ struct SensorData {
   int   pm10     = 0;
   int   mq2      = 0;
   int   mq7      = 0;
+  int   mq2_raw  = 0;
+  int   mq7_raw  = 0;
 } liveData;
 
 SemaphoreHandle_t dataMutex;
@@ -92,6 +94,49 @@ TaskHandle_t FirebaseTaskHandle;
 TaskHandle_t GoogleTaskHandle;
 
 uint32_t lastSuccessfulSync = 0;
+
+// ============================================================
+//  MQ SENSOR CONVERSION & CALIBRATION SETUP
+// ============================================================
+float MQ2_R0 = 4.18; // Default baseline R0
+float MQ7_R0 = 1.52; // Default baseline R0
+
+float getRs(int adc, float RL = 10.0) {
+  if (adc <= 0) adc = 1;
+  if (adc >= 4095) adc = 4094;
+  return RL * (4095.0 - adc) / adc;
+}
+
+void calibrateMQSensors() {
+  Serial.println("[..] Calibrating MQ sensors in fresh air...");
+  lcd.setCursor(0, 1); lcd.print("MQ Calibrating..");
+  
+  long mq2_sum = 0, mq7_sum = 0;
+  const int samples = 50;
+  for (int i = 0; i < samples; i++) {
+    mq2_sum += analogRead(MQ2_PIN);
+    mq7_sum += analogRead(MQ7_PIN);
+    delay(60);
+  }
+  
+  int avg_mq2 = mq2_sum / samples;
+  int avg_mq7 = mq7_sum / samples;
+  
+  // Validate and assign (reject values that are close to ground or VCC)
+  if (avg_mq2 > 100 && avg_mq2 < 4000) {
+    MQ2_R0 = getRs(avg_mq2) / 9.83;
+    Serial.printf("[OK] MQ2 Calibrated: R0 = %.2f (ADC: %d)\n", MQ2_R0, avg_mq2);
+  } else {
+    Serial.printf("[WARN] MQ2 ADC out of bounds (%d), using default R0 = %.2f\n", avg_mq2, MQ2_R0);
+  }
+  
+  if (avg_mq7 > 100 && avg_mq7 < 4000) {
+    MQ7_R0 = getRs(avg_mq7) / 27.0;
+    Serial.printf("[OK] MQ7 Calibrated: R0 = %.2f (ADC: %d)\n", MQ7_R0, avg_mq7);
+  } else {
+    Serial.printf("[WARN] MQ7 ADC out of bounds (%d), using default R0 = %.2f\n", avg_mq7, MQ7_R0);
+  }
+}
 
 int readAnalogAverage(int pin, int samples = 10) {
   long sum = 0;
@@ -140,6 +185,8 @@ void updateLCD() {
     int p10   = liveData.pm10;
     int g2    = liveData.mq2;
     int g7    = liveData.mq7;
+    int r2    = liveData.mq2_raw;
+    int r7    = liveData.mq7_raw;
     xSemaphoreGive(dataMutex);
 
     switch (screen % 3) {
@@ -153,9 +200,9 @@ void updateLCD() {
         break;
       case 1:
         lcd.setCursor(0, 0);
-        lcd.print("MQ2(LPG):"); lcd.print(g2);
+        lcd.print("M2:"); lcd.print(g2); lcd.print(" R:"); lcd.print(r2);
         lcd.setCursor(0, 1);
-        lcd.print("MQ7(CO): "); lcd.print(g7);
+        lcd.print("M7:"); lcd.print(g7); lcd.print(" R:"); lcd.print(r7);
         break;
       case 2:
         lcd.setCursor(0, 0); lcd.print("AeroSense v2.0");
@@ -177,11 +224,21 @@ void setup() {
   // I2C
   Wire.begin(I2C_SDA, I2C_SCL);
 
+  // Configure analog pins and ADC resolution/attenuation
+  pinMode(MQ2_PIN, INPUT);
+  pinMode(MQ7_PIN, INPUT);
+  analogReadResolution(12);
+  analogSetPinAttenuation(MQ2_PIN, ADC_11db);
+  analogSetPinAttenuation(MQ7_PIN, ADC_11db);
+
   // LCD
   lcd.init();
   lcd.backlight();
   lcd.setCursor(0, 0); lcd.print("AeroSense v2.0");
   lcd.setCursor(0, 1); lcd.print("Booting...");
+
+  // Calibrate MQ Sensors
+  calibrateMQSensors();
 
   // AHT20B
   if (aht.begin()) {
@@ -307,9 +364,24 @@ void firebaseTask(void *pvParameters) {
     // MQ2 / MQ7 (Averaged outside the mutex to prevent task starvation)
     int avgMQ2 = readAnalogAverage(MQ2_PIN, 10);
     int avgMQ7 = readAnalogAverage(MQ7_PIN, 10);
+    
+    float rsMQ2 = getRs(avgMQ2);
+    float rsMQ7 = getRs(avgMQ7);
+    
+    // Calculate PPM using regression: PPM = a * (Rs/R0)^b
+    int ppmMQ2 = (int)(574.25 * pow(rsMQ2 / MQ2_R0, -2.222));
+    int ppmMQ7 = (int)(99.042 * pow(rsMQ7 / MQ7_R0, -1.518));
+    
+    if (ppmMQ2 < 0) ppmMQ2 = 0;
+    if (ppmMQ7 < 0) ppmMQ7 = 0;
+
+    Serial.printf("[MQ] Raw ADC -> MQ2: %d, MQ7: %d | Calculated PPM -> MQ2: %d, MQ7: %d\n", avgMQ2, avgMQ7, ppmMQ2, ppmMQ7);
+
     if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(500))) {
-      liveData.mq2 = avgMQ2;
-      liveData.mq7 = avgMQ7;
+      liveData.mq2 = ppmMQ2;
+      liveData.mq7 = ppmMQ7;
+      liveData.mq2_raw = avgMQ2;
+      liveData.mq7_raw = avgMQ7;
       xSemaphoreGive(dataMutex);
     }
 
