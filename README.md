@@ -28,7 +28,7 @@ AeroSense/ (Root)
 🛠️ System Workflow Visualized
 AeroSense splits tasks across your hardware edge and cloud architectures to achieve fast UI loading speeds without risking long-term data bloating:
 
-Plaintext
+
                   ┌─────────────── [ ESP32 / AeroSense Edge Node ] ───────────────┐
                   │                                                               │
                   │  Reads: AHT20 (Temp/Hum) | PMS5003 (PM) | MQ-2 & MQ-7 (Gas)   │
